@@ -105,14 +105,6 @@ public class NumPadKey extends ViewGroup {
         setContentDescription(mDigitText.getText().toString() + mKlondikeText.getText().toString());
     }
 
-    @Override
-    public void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-
-        // Reset the "announced headset" flag when detached.
-        ObscureSpeechDelegate.sAnnouncedHeadset = false;
-    }
-
     public void setDigit(int digit) {
         mDigit = digit;
         updateText();
@@ -139,6 +131,13 @@ public class NumPadKey extends ViewGroup {
         setContentDescription(mDigitText.getText().toString());
     }
 
+    @Override
+    public void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+
+        // Reset the "announced headset" flag when detached.
+        ObscureSpeechDelegate.sAnnouncedHeadset = false;
+    }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {

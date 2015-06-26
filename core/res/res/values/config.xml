@@ -1768,10 +1768,6 @@
     <string-array translatable="false" name="config_operatorConsideredNonRoaming">
     </string-array>
 
-    <!-- Threshold (in ms) under which a screen off / screen on will be considered a reset of the
-         immersive mode confirmation prompt.-->
-    <integer name="config_immersive_mode_confirmation_panic">5000</integer>
-
     <!-- For some operators, PDU has garbages. To fix it, need to use valid index -->
     <integer name="config_valid_wappush_index">-1</integer>
 
@@ -1909,6 +1905,14 @@
          carrier provisioning. If false: hard disabled. If true: then depends on carrier
          provisioning, availability etc -->
     <bool name="config_carrier_vt_available">false</bool>
+
+    <!-- Flag specifying whether WFC over IMS is available on device -->
+    <bool name="config_device_wfc_ims_available">false</bool>
+
+    <!-- Flag specifying whether WFC over IMS should be available for carrier: independent of
+         carrier provisioning. If false: hard disabled. If true: then depends on carrier
+         provisioning, availability etc -->
+    <bool name="config_carrier_wfc_ims_available">false</bool>
 
     <bool name="config_networkSamplingWakesDevice">true</bool>
 
