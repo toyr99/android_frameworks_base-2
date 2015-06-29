@@ -288,7 +288,7 @@ public final class SystemServer {
                 reason = null;
             }
 
-            ShutdownThread.rebootOrShutdown(reboot, reason);
+            ShutdownThread.rebootOrShutdown(null, reboot, reason);
         }
     }
 
@@ -619,6 +619,16 @@ public final class SystemServer {
                             new ClipboardService(context));
                 } catch (Throwable e) {
                     reportWtf("starting Clipboard Service", e);
+                }
+            }
+
+            if (!disableNonCoreServices &&
+                    mPackageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH)) {
+                try {
+                    Slog.i(TAG, "TorchService");
+                    ServiceManager.addService(Context.TORCH_SERVICE, new TorchService(context));
+                } catch (Throwable e) {
+                    reportWtf("starting Torch Service", e);
                 }
             }
 

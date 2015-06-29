@@ -25,6 +25,7 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
 import android.media.IAudioService;
+import android.os.Binder;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -156,6 +157,7 @@ public class Camera {
     private static final int CAMERA_MSG_FOCUS_MOVE       = 0x800;
 
     private long mNativeContext; // accessed by native methods
+    private int mCameraId;
     private EventHandler mEventHandler;
     private ShutterCallback mShutterCallback;
     private PictureCallback mRawImageCallback;
@@ -181,6 +183,7 @@ public class Camera {
     private static final int ENOSYS = -38;
     private static final int EUSERS = -87;
     private static final int EOPNOTSUPP = -95;
+    private Binder mTorchToken;
 
     /**
      * Broadcast Action:  A new picture is taken by the camera, and the entry of
@@ -234,7 +237,11 @@ public class Camera {
      * If {@link #getNumberOfCameras()} returns N, the valid id is 0 to N-1.
      */
     public static void getCameraInfo(int cameraId, CameraInfo cameraInfo) {
-        _getCameraInfo(cameraId, cameraInfo);
+        try {
+            _getCameraInfo(cameraId, cameraInfo);
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Lock screen is disabled, facelock can't get camera info");
+        }
         IBinder b = ServiceManager.getService(Context.AUDIO_SERVICE);
         IAudioService audioService = IAudioService.Stub.asInterface(b);
         try {
@@ -444,6 +451,7 @@ public class Camera {
     }
 
     private int cameraInitVersion(int cameraId, int halVersion) {
+        mCameraId = cameraId;
         mShutterCallback = null;
         mRawImageCallback = null;
         mJpegCallback = null;
@@ -451,6 +459,7 @@ public class Camera {
         mPostviewCallback = null;
         mUsingPreviewAllocation = false;
         mZoomListener = null;
+        mTorchToken = new Binder();
 
         Looper looper;
         if ((looper = Looper.myLooper()) != null) {
@@ -462,7 +471,11 @@ public class Camera {
         }
 
         String packageName = ActivityThread.currentPackageName();
+        if (packageName == null && android.os.Process.SYSTEM_UID == Binder.getCallingUid()) {
+            packageName = "android";
+        }
 
+        notifyTorch(true);
         return native_setup(new WeakReference<Camera>(this), cameraId, halVersion, packageName);
     }
 
@@ -525,6 +538,22 @@ public class Camera {
     Camera() {
     }
 
+    private void notifyTorch(boolean inUse) {
+        IBinder b = ServiceManager.getService(Context.TORCH_SERVICE);
+        ITorchService torchService = ITorchService.Stub.asInterface(b);
+        if (torchService != null) {
+            try {
+                if (inUse) {
+                    torchService.onCameraOpened(mTorchToken, mCameraId);
+                } else {
+                    torchService.onCameraClosed(mTorchToken, mCameraId);
+                }
+            } catch (RemoteException e) {
+                // Ignore
+            }
+        }
+    }
+
     @Override
     protected void finalize() {
         release();
@@ -542,6 +571,7 @@ public class Camera {
      * <p>You must call this as soon as you're done with the Camera object.</p>
      */
     public final void release() {
+        notifyTorch(false);
         native_release();
         mFaceDetectionRunning = false;
     }
@@ -3379,6 +3409,7 @@ public class Camera {
          * @see #getSceneMode()
          */
         public void setSceneMode(String value) {
+            if(getSupportedSceneModes() == null) return;
             set(KEY_SCENE_MODE, value);
         }
 
@@ -3416,6 +3447,7 @@ public class Camera {
          * @see #getFlashMode()
          */
         public void setFlashMode(String value) {
+	    if(getSupportedFlashModes() == null) return;
             set(KEY_FLASH_MODE, value);
         }
 
@@ -4100,6 +4132,7 @@ public class Camera {
             splitter.setString(str);
             int index = 0;
             for (String s : splitter) {
+                s = s.replaceAll("\\s","");
                 output[index++] = Integer.parseInt(s);
             }
         }

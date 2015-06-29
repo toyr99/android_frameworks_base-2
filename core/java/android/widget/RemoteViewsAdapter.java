@@ -620,7 +620,15 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
                 // remove based on both its position as well as it's current memory usage, as well
                 // as whether it was directly requested vs. whether it was preloaded by our caching
                 // mechanism.
-                mIndexRemoteViews.remove(getFarthestPositionFrom(pruneFromPosition, visibleWindow));
+                int trimIndex = getFarthestPositionFrom(pruneFromPosition, visibleWindow);
+
+                // Need to check that this is a valid index, to cover the case where you have only
+                // a single view in the cache, but it's larger than the max memory limit
+                if (trimIndex < 0) {
+                    break;
+                }
+
+                mIndexRemoteViews.remove(trimIndex);
             }
 
             // Update the metadata cache
@@ -1074,9 +1082,9 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
     }
 
     public int getCount() {
-        final RemoteViewsMetaData metaData = mCache.getMetaData();
-        synchronized (metaData) {
-            return metaData.count;
+        final RemoteViewsMetaData tmpMetaData = mCache.getTemporaryMetaData();
+        synchronized (tmpMetaData) {
+            return tmpMetaData.count;
         }
     }
 
@@ -1262,6 +1270,11 @@ public class RemoteViewsAdapter extends BaseAdapter implements Handler.Callback 
             return;
         }
 
+        // Clear the data in cache
+        final RemoteViewsMetaData metaData = mCache.getMetaData();
+        synchronized (metaData) {
+            metaData.reset();
+        }
         // Flush the cache so that we can reload new items from the service
         synchronized (mCache) {
             mCache.reset();
