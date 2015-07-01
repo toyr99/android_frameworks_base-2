@@ -18,16 +18,14 @@
 package com.android.systemui.cm;
 
 import android.app.ActivityManager;
-import android.app.ActivityManagerNative;
-import android.app.ActivityOptions;
 import android.app.KeyguardManager;
-import android.app.SearchManager;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.ResolveInfo;
+import android.hardware.TorchManager;
 import android.hardware.input.InputManager;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
@@ -50,7 +48,7 @@ import android.view.WindowManagerGlobal;
 import android.widget.Toast;
 
 import com.android.internal.statusbar.IStatusBarService;
-import static com.android.systemui.cm.NavigationRingConstants.*;
+import static com.android.internal.util.cm.NavigationRingConstants.*;
 import com.android.systemui.screenshot.TakeScreenshotService;
 
 import java.net.URISyntaxException;
@@ -150,6 +148,10 @@ public class ActionTarget {
                 // Do nothing here
             }
 
+            return true;
+        } else if (action.equals(ACTION_TORCH)) {
+            TorchManager torchManager = (TorchManager) mContext.getSystemService(Context.TORCH_SERVICE);
+            torchManager.toggleTorch();
             return true;
         } else {
             try {
