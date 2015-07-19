@@ -2421,6 +2421,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
             loadIntegerSetting(stmt, Settings.System.POINTER_SPEED,
                     R.integer.def_pointer_speed);
+         
+            loadIntegerSetting(stmt, Settings.System.DOUBLE_TAP_SLEEP_GESTURE,
+                    R.integer.def_double_tap_sleep_gesture);
 
             loadIntegerSetting(stmt, Settings.System.STATUS_BAR_NOTIF_COUNT,
                     R.integer.def_notif_count);
@@ -2433,6 +2436,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
  
            loadHeadsUpSetting(stmt);
 
+
+            loadBooleanSetting(stmt, Settings.System.SWAP_VOLUME_BUTTONS,
+                    R.bool.def_swap_volume_buttons);
 
         } finally {
             if (stmt != null) stmt.close();
