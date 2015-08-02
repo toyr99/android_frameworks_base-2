@@ -79,4 +79,11 @@
   <java-symbol type="string" name="quick_settings_tile_flashlight_not_title" />
   <java-symbol type="string" name="quick_settings_tile_flashlight_not_summary" />
   <java-symbol type="drawable" name="ic_signal_flashlight_disable" />
+
+    <!-- LED pulse -->
+    <java-symbol type="bool" name="config_ledCanPulse" />
+
+  <!-- lockscreen Wallpaper -->
+  <java-symbol type="anim" name="lock_screen_wallpaper_exit_noop" />
+
 </resources>
