@@ -19,7 +19,6 @@ package com.android.internal.policy.impl;
 import android.animation.ArgbEvaluator;
 import android.animation.ValueAnimator;
 import android.app.ActivityManager;
-import android.app.ActivityManagerNative;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -28,7 +27,6 @@ import android.graphics.PixelFormat;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
 import android.os.Message;
-import android.os.RemoteException;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
@@ -45,6 +43,7 @@ import android.view.animation.DecelerateInterpolator;
 import android.widget.Button;
 import android.widget.FrameLayout;
 
+import android.view.WindowManagerPolicyControl;
 import com.android.internal.R;
 
 /**
@@ -60,9 +59,12 @@ public class ImmersiveModeConfirmation {
     private final Context mContext;
     private final H mHandler;
     private final long mShowDelayMs;
+    private final long mPanicThresholdMs;
+    private final SparseBooleanArray mUserPanicResets = new SparseBooleanArray();
 
     private boolean mConfirmed;
     private ClingWindowView mClingWindow;
+    private long mPanicTime;
     private WindowManager mWindowManager;
     private int mCurrentUserId;
 
@@ -70,6 +72,8 @@ public class ImmersiveModeConfirmation {
         mContext = context;
         mHandler = new H();
         mShowDelayMs = getNavBarExitDuration() * 3;
+        mPanicThresholdMs = context.getResources()
+                .getInteger(R.integer.config_immersive_mode_confirmation_panic);
         mWindowManager = (WindowManager)
                 mContext.getSystemService(Context.WINDOW_SERVICE);
     }
@@ -82,6 +86,8 @@ public class ImmersiveModeConfirmation {
     public void loadSetting(int currentUserId) {
         mConfirmed = false;
         mCurrentUserId = currentUserId;
+        if (DEBUG) Slog.d(TAG, String.format("loadSetting() mCurrentUserId=%d resetForPanic=%s",
+                mCurrentUserId, mUserPanicResets.get(mCurrentUserId, false)));
         String value = null;
         try {
             value = Settings.Secure.getStringForUser(mContext.getContentResolver(),
@@ -112,7 +118,7 @@ public class ImmersiveModeConfirmation {
             boolean userSetupComplete) {
         mHandler.removeMessages(H.SHOW);
         if (isImmersiveMode) {
-            final boolean disabled = PolicyControl.disableImmersiveConfirmation(pkg);
+            final boolean disabled = WindowManagerPolicyControl.disableImmersiveConfirmation(pkg);
             if (DEBUG) Slog.d(TAG, String.format("immersiveModeChanged() disabled=%s mConfirmed=%s",
                     disabled, mConfirmed));
             if (!disabled && (DEBUG_SHOW_EVERY_TIME || !mConfirmed) && userSetupComplete) {
@@ -123,11 +129,34 @@ public class ImmersiveModeConfirmation {
         }
     }
 
+    public boolean onPowerKeyDown(boolean isScreenOn, long time, boolean inImmersiveMode) {
+        if (!isScreenOn && (time - mPanicTime < mPanicThresholdMs)) {
+            // turning the screen back on within the panic threshold
+            mHandler.sendEmptyMessage(H.PANIC);
+            return mClingWindow == null;
+        }
+        if (isScreenOn && inImmersiveMode) {
+            // turning the screen off, remember if we were in immersive mode
+            mPanicTime = time;
+        } else {
+            mPanicTime = 0;
+        }
+        return false;
+    }
+
     public void confirmCurrentPrompt() {
         if (mClingWindow != null) {
             if (DEBUG) Slog.d(TAG, "confirmCurrentPrompt()");
             mHandler.post(mConfirm);
         }
+    }
+
+    private void handlePanic() {
+        if (DEBUG) Slog.d(TAG, "handlePanic()");
+        if (mUserPanicResets.get(mCurrentUserId, false)) return;  // already reset for panic
+        mUserPanicResets.put(mCurrentUserId, true);
+        mConfirmed = false;
+        saveSetting();
     }
 
     private void handleHide() {
@@ -300,6 +329,7 @@ public class ImmersiveModeConfirmation {
     private final class H extends Handler {
         private static final int SHOW = 1;
         private static final int HIDE = 2;
+        private static final int PANIC = 3;
 
         @Override
         public void handleMessage(Message msg) {
@@ -309,6 +339,9 @@ public class ImmersiveModeConfirmation {
                     break;
                 case HIDE:
                     handleHide();
+                    break;
+                case PANIC:
+                    handlePanic();
                     break;
             }
         }

@@ -34,6 +34,10 @@ import android.view.SurfaceSession;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.view.animation.Transformation;
+import android.os.Handler;
+import android.os.Message;
+import com.android.server.DisplayThread;
+import android.os.Looper;
 
 class ScreenRotationAnimation {
     static final String TAG = "ScreenRotationAnimation";
@@ -47,10 +51,12 @@ class ScreenRotationAnimation {
     final Context mContext;
     final DisplayContent mDisplayContent;
     SurfaceControl mSurfaceControl;
+    final Object mLock = new Object();
     BlackFrame mCustomBlackFrame;
     BlackFrame mExitingBlackFrame;
     BlackFrame mEnteringBlackFrame;
     int mWidth, mHeight;
+    int mSnapshotRotation;
 
     int mOriginalRotation;
     int mOriginalWidth, mOriginalHeight;
@@ -130,6 +136,7 @@ class ScreenRotationAnimation {
     private boolean mMoreStartExit;
     private boolean mMoreStartFrame;
     long mHalfwayPoint;
+    final H mHandler = new H(DisplayThread.get().getLooper());
 
     public void printTo(String prefix, PrintWriter pw) {
         pw.print(prefix); pw.print("mSurface="); pw.print(mSurfaceControl);
@@ -221,13 +228,26 @@ class ScreenRotationAnimation {
             originalWidth = displayInfo.logicalWidth;
             originalHeight = displayInfo.logicalHeight;
         }
-        if (originalRotation == Surface.ROTATION_90
-                || originalRotation == Surface.ROTATION_270) {
-            mWidth = originalHeight;
-            mHeight = originalWidth;
+        // Allow for abnormal hardware orientation
+        mSnapshotRotation = (4 - android.os.SystemProperties.getInt("ro.sf.hwrotation",0) / 90) % 4;
+        if (mSnapshotRotation == Surface.ROTATION_0 || mSnapshotRotation == Surface.ROTATION_180) {
+            if (originalRotation == Surface.ROTATION_90
+                 || originalRotation == Surface.ROTATION_270) {
+                mWidth = originalHeight;
+                mHeight = originalWidth;
+            } else {
+                mWidth = originalWidth;
+                mHeight = originalHeight;
+            }
         } else {
-            mWidth = originalWidth;
-            mHeight = originalHeight;
+            if (originalRotation == Surface.ROTATION_90
+                || originalRotation == Surface.ROTATION_270) {
+                mWidth = originalWidth;
+                mHeight = originalHeight;
+            } else {
+                mWidth = originalHeight;
+                mHeight = originalWidth;
+            }
         }
 
         mOriginalRotation = originalRotation;
@@ -269,6 +289,12 @@ class ScreenRotationAnimation {
                 mSurfaceControl.setAlpha(0);
                 mSurfaceControl.show();
                 sur.destroy();
+                // If screenshot layer stays for more than freeze
+                // timeout value with no updates on the screen,
+                // destroy the layer explicitly.
+                mHandler.removeMessages(H.SCREENSHOT_FREEZE_TIMEOUT);
+                mHandler.sendEmptyMessageDelayed(H.SCREENSHOT_FREEZE_TIMEOUT,
+                                           H.FREEZE_TIMEOUT_VAL);
             } catch (OutOfResourcesException e) {
                 Slog.w(TAG, "Unable to allocate freeze surface", e);
             }
@@ -298,28 +324,30 @@ class ScreenRotationAnimation {
     }
 
     private void setSnapshotTransformInTransaction(Matrix matrix, float alpha) {
-        if (mSurfaceControl != null) {
-            matrix.getValues(mTmpFloats);
-            float x = mTmpFloats[Matrix.MTRANS_X];
-            float y = mTmpFloats[Matrix.MTRANS_Y];
-            if (mForceDefaultOrientation) {
-                mDisplayContent.getLogicalDisplayRect(mCurrentDisplayRect);
-                x -= mCurrentDisplayRect.left;
-                y -= mCurrentDisplayRect.top;
-            }
-            mSurfaceControl.setPosition(x, y);
-            mSurfaceControl.setMatrix(
+        synchronized(mLock) {
+            if (mSurfaceControl != null) {
+                matrix.getValues(mTmpFloats);
+                float x = mTmpFloats[Matrix.MTRANS_X];
+                float y = mTmpFloats[Matrix.MTRANS_Y];
+                if (mForceDefaultOrientation) {
+                    mDisplayContent.getLogicalDisplayRect(mCurrentDisplayRect);
+                    x -= mCurrentDisplayRect.left;
+                    y -= mCurrentDisplayRect.top;
+                }
+                mSurfaceControl.setPosition(x, y);
+                mSurfaceControl.setMatrix(
                     mTmpFloats[Matrix.MSCALE_X], mTmpFloats[Matrix.MSKEW_Y],
                     mTmpFloats[Matrix.MSKEW_X], mTmpFloats[Matrix.MSCALE_Y]);
-            mSurfaceControl.setAlpha(alpha);
-            if (DEBUG_TRANSFORMS) {
-                float[] srcPnts = new float[] { 0, 0, mWidth, mHeight };
-                float[] dstPnts = new float[4];
-                matrix.mapPoints(dstPnts, srcPnts);
-                Slog.i(TAG, "Original  : (" + srcPnts[0] + "," + srcPnts[1]
+                mSurfaceControl.setAlpha(alpha);
+                if (DEBUG_TRANSFORMS) {
+                    float[] srcPnts = new float[] { 0, 0, mWidth, mHeight };
+                    float[] dstPnts = new float[4];
+                    matrix.mapPoints(dstPnts, srcPnts);
+                    Slog.i(TAG, "Original  : (" + srcPnts[0] + "," + srcPnts[1]
                         + ")-(" + srcPnts[2] + "," + srcPnts[3] + ")");
-                Slog.i(TAG, "Transformed: (" + dstPnts[0] + "," + dstPnts[1]
+                    Slog.i(TAG, "Transformed: (" + dstPnts[0] + "," + dstPnts[1]
                         + ")-(" + dstPnts[2] + "," + dstPnts[3] + ")");
+                }
             }
         }
     }
@@ -352,7 +380,7 @@ class ScreenRotationAnimation {
         // Compute the transformation matrix that must be applied
         // to the snapshot to make it stay in the same original position
         // with the current screen rotation.
-        int delta = deltaRotation(rotation, Surface.ROTATION_0);
+        int delta = deltaRotation(rotation, mSnapshotRotation);
         createRotationMatrix(delta, mWidth, mHeight, mSnapshotInitialMatrix);
 
         if (DEBUG_STATE) Slog.v(TAG, "**** ROTATION: " + delta);
@@ -1006,5 +1034,39 @@ class ScreenRotationAnimation {
 
     public Transformation getEnterTransformation() {
         return mEnterTransformation;
+    }
+
+    final class H extends Handler {
+        public static final int SCREENSHOT_FREEZE_TIMEOUT = 2;
+
+        //Set the freeze timeout value to 6sec (which is greater than
+        //APP_FREEZE_TIMEOUT value in WindowManagerService)
+        public static final int FREEZE_TIMEOUT_VAL = 6000;
+
+        public H(Looper looper) {
+            super(looper, null, true /*async*/);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            switch (msg.what) {
+                case SCREENSHOT_FREEZE_TIMEOUT: {
+                     synchronized(mLock) {
+                         if ((mSurfaceControl != null) && (isAnimating())) {
+                             Slog.e(TAG, "Exceeded Freeze timeout. Destroy layers");
+                             kill();
+                         } else if (mSurfaceControl != null){
+                             Slog.e(TAG,"No animation, exceeded freeze timeout. Destroy Screenshot layer");
+                             mSurfaceControl.destroy();
+                             mSurfaceControl = null;
+                         }
+                     }
+                     break;
+                }
+                default:
+                     Slog.e(TAG, "No Valid Message To Handle");
+                break;
+            }
+        }
     }
 }
