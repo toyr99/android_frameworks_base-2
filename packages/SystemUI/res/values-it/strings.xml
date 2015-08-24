@@ -364,4 +364,7 @@
     <string name="quick_settings_reset_confirmation_title" msgid="748792586749897883">"Nascondere <xliff:g id="TILE_LABEL">%1$s</xliff:g>?"</string>
     <string name="quick_settings_reset_confirmation_message" msgid="2235970126803317374">"Verranno visualizzate di nuovo quando le riattiverai nelle impostazioni."</string>
     <string name="quick_settings_reset_confirmation_button" msgid="2660339101868367515">"Nascondi"</string>
+    <string name="screenshot_delete_action">Elimina</string>
+    <string name="screenshot_delete_confirmation">Screenshot eliminato</string>
+    <string name="clear_recents">Chiudi app</string>
 </resources>
